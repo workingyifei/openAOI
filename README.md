@@ -8,7 +8,9 @@ The system currently handles two specific defect types from our dataset:
 - **Solder Paste Slope Defects** (`Bad_slope`, formerly 坡度/pōdù)
 - **Solder Bridging Defects** (`Bad_bridge`, formerly 桥脚/qiáojiǎo)
 
-These defects were chosen based on the available dataset, which contains high-quality images captured using industrial inspection systems. The images show both solder paste and mounted components, suggesting they were captured using:
+The dataset was found online at [Kaggle](https://www.kaggle.com/datasets/kubeedgeianvs/pcb-aoi) and can be accessed for further details and downloads.
+
+These defects were chosen based on the available defects in the dataset, which contains high-quality images captured using industrial inspection systems. The images show both solder paste and mounted components, suggesting they were captured using:
 - RGB cameras with high resolution
 - Angled lighting to enhance solder paste texture visibility
 - Possibly IR components for better solder joint visualization
@@ -18,26 +20,26 @@ These defects were chosen based on the available dataset, which contains high-qu
 While the current implementation focuses on two defect types, the system is designed to be extended to cover the full range of IPC-610 defect classes, including:
 
 1. Additional Solder Joint Defects
-   - Insufficient Solder
-   - Excess Solder
-   - Voiding
+   - Insufficient Solder: This defect occurs when there is not enough solder applied to the joint, leading to weak connections. Possible root causes include inadequate solder paste application or improper reflow temperatures.
+   - Excess Solder: This defect is characterized by an overabundance of solder, which can cause bridging between joints. Root causes may include excessive solder paste application or incorrect stencil design.
+   - Voiding: Voids are air pockets trapped under the solder joint, which can compromise electrical connectivity. They may result from improper solder paste printing, insufficient reflow time, or contamination.
 
 2. Component Placement Defects
-   - Tombstoning
-   - Component Shift
-   - Component Rotation
+   - Tombstoning: This defect happens when one end of a component lifts off the PCB during soldering, often due to uneven heating or improper solder volume. It can lead to unreliable connections.
+   - Component Shift: This occurs when components are misaligned during placement, which can result from mechanical issues in the pick-and-place machine or incorrect programming.
+   - Component Rotation: This defect involves components being rotated incorrectly on the PCB, potentially due to misalignment during placement or issues with the component's orientation in the feeder.
 
 3. Surface Defects
-   - Contamination
-   - Solder Balls
+   - Contamination: Contaminants on the PCB surface can interfere with solder adhesion, leading to weak joints. Common causes include dust, oils, or residues from previous manufacturing processes.
+   - Solder Balls: These are small spheres of solder that can form during the soldering process, often due to excessive solder or improper heating. They can create shorts if they land on adjacent pads.
 
 4. PCB and Pad Defects
-   - Pad Lift
-   - Copper Exposure
+   - Pad Lift: This defect occurs when the pad lifts off the PCB substrate, often due to thermal stress or poor adhesion. It can lead to open circuits and unreliable connections.
+   - Copper Exposure: This defect involves exposed copper areas on the PCB, which can lead to corrosion or short circuits. It may result from inadequate solder mask application or damage during handling.
 
 5. Lead Defects
-   - Lead Bend
-   - Lead Protrusion
+   - Lead Bend: This defect occurs when component leads are bent, which can complicate placement and soldering. It may be caused by mishandling or improper storage.
+   - Lead Protrusion: This defect involves leads extending beyond the PCB surface, which can lead to soldering issues or mechanical failures. It may result from incorrect lead length or placement errors.
 
 ## Features
 
@@ -50,7 +52,7 @@ While the current implementation focuses on two defect types, the system is desi
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/openAOI.git
+git clone https://github.com/workingyifei/openAOI.git
 cd openAOI
 ```
 

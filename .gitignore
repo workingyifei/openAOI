@@ -1,3 +1,7 @@
 venv
 __pycache__
 .DS_Store
+dataset/
+results/
+visualization_output/
+evaluation_results/
