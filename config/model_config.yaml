@@ -1,0 +1,44 @@
+# Model configuration for PCB defect detection
+
+# Model settings
+model_type: 'yolov8s.pt'  # YOLOv8 small model
+image_size: [640, 640]    # Input image size
+
+# Defect classes from the dataset
+defect_classes:
+  0: 'Bad_podu'      # Solder paste slope defect (坡度)
+  1: 'Bad_qiaojiao'  # Solder bridging defect (桥脚)
+
+# Training settings
+epochs: 100
+batch_size: 16
+num_workers: 4
+early_stopping_patience: 10
+
+# Optimizer settings
+optimizer: 'AdamW'
+learning_rate: 0.001
+weight_decay: 0.0005
+label_smoothing: 0.1
+dropout: 0.2
+
+# Output settings
+output_dir: 'runs/train'
+experiment_name: 'pcb_defect_detection'
+
+# Augmentation settings
+augmentation:
+  # Geometric augmentations
+  rotation_range: [-30, 30]     # Less extreme rotation for PCB images
+  scale_range: [0.8, 1.2]      # Scale variation
+  translate_range: [-0.1, 0.1]  # Translation
+  
+  # Color/intensity augmentations
+  brightness_range: [0.8, 1.2]
+  contrast_range: [0.8, 1.2]
+  saturation_range: [0.8, 1.2]
+  
+  # PCB-specific augmentations
+  noise_probability: 0.3        # Add noise to simulate image sensor noise
+  blur_probability: 0.2         # Blur to simulate focus variations
+  shadow_probability: 0.2       # Add shadows to simulate lighting variations 
