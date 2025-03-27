@@ -193,6 +193,24 @@ The evaluation process includes:
 3. Calculating comprehensive metrics
 4. Generating visualizations and saving results
 
+#### Example Outputs
+
+Here are some example outputs from the evaluation process:
+
+##### Detection Results
+![Detection Example](docs/images/detection_example.jpg)
+*Side-by-side comparison showing ground truth (left, blue) and predictions (right, red) for a PCB with multiple defects.*
+
+##### Performance Metrics
+![Precision-Recall Curves](docs/images/precision_recall_curves.png)
+*Precision-Recall curves showing model performance for both defect classes.*
+
+![Confusion Matrix](docs/images/confusion_matrix.png)
+*Confusion matrix showing the model's classification performance across defect types.*
+
+![Confidence Distribution](docs/images/confidence_distribution.png)
+*Distribution of confidence scores for predictions, helping identify optimal threshold settings.*
+
 ## Model Configuration
 
 The model configuration (`config/model_config.yaml`) includes:
