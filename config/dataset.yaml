@@ -1,0 +1,7 @@
+path: /home/yifei/Desktop/openAOI/dataset/prepared_dataset
+train: /home/yifei/Desktop/openAOI/dataset/prepared_dataset/train/images
+val: /home/yifei/Desktop/openAOI/dataset/prepared_dataset/val/images
+test: /home/yifei/Desktop/openAOI/dataset/prepared_dataset/test/images
+names:
+  0: SolderSlopeDefect
+  1: SolderBridgingDefect

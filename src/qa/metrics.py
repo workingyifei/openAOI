@@ -3,6 +3,43 @@ from scipy.spatial import distance
 
 class DefectMetrics:
     @staticmethod
+    def compute_bridge_metrics(defect, pixel_to_mm):
+        """Compute metrics for solder bridging (SolderBridgingDefect)"""
+        bbox = np.array(defect['bbox'])
+        width_mm = float((bbox[2] - bbox[0]) * pixel_to_mm)
+        height_mm = float((bbox[3] - bbox[1]) * pixel_to_mm)
+        
+        return {
+            'bridge_width': width_mm,
+            'bridge_height': height_mm,
+            'area_mm2': float(width_mm * height_mm)
+        }
+    
+    @staticmethod
+    def compute_slope_metrics(defect, mask):
+        """Compute metrics for solder paste slope (SolderSlopeDefect)"""
+        if mask is None:
+            return {}
+            
+        # Calculate the slope angle using the mask
+        # This is a simplified version - in practice you might want to use
+        # more sophisticated edge detection and line fitting
+        edges = np.where(mask > 0)
+        if len(edges[0]) < 2:
+            return {}
+            
+        # Fit a line to the edge points
+        x = edges[1]
+        y = edges[0]
+        slope = float(np.polyfit(x, y, 1)[0])
+        angle = float(np.abs(np.arctan(slope) * 180 / np.pi))
+        
+        return {
+            'slope_angle': angle,
+            'slope': slope
+        }
+    
+    @staticmethod
     def compute_solder_bridge_metrics(defect, pixel_to_mm):
         """Compute metrics for solder bridging"""
         bbox = np.array(defect['bbox'])

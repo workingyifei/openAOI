@@ -8,27 +8,12 @@ class DefectDetector:
         self.settings = settings
         self.model = YOLO(model_path)
         self.aug = PCBAugmentation()
-        self.class_thresh = self._load_class_thresholds()
+        self.conf_thresh = 0.5  # Default confidence threshold
         
-    def _load_class_thresholds(self):
-        """Load class-specific thresholds from IPC standards"""
-        ipc_classes = self.settings.load_ipc_classes()
-        thresholds = {}
-        for defect in ipc_classes['defect_classes']:
-            thresholds[defect['name']] = {
-                'confidence': 0.5,  # Default confidence threshold
-                **defect['class3_limits']
-            }
-        return thresholds
-    
     def detect(self, image):
         """Detect defects in the image"""
-        # Augment image for inference
-        aug_data = self.aug(image=image)
-        aug_image = aug_data['image']
-        
         # Run inference
-        results = self.model(aug_image)
+        results = self.model(image)
         
         # Post-process results
         processed_results = self._process_results(results[0])
@@ -36,7 +21,7 @@ class DefectDetector:
         return processed_results
     
     def _process_results(self, result):
-        """Process YOLO results and apply IPC thresholds"""
+        """Process YOLO results and apply thresholds"""
         processed_defects = []
         
         # Extract boxes, scores, and class predictions
@@ -51,16 +36,14 @@ class DefectDetector:
             masks = None
         
         for idx, (box, score, cls) in enumerate(zip(boxes, scores, classes)):
-            cls_name = self.model.names[int(cls)]
-            
-            # Apply class-specific threshold
-            if score < self.class_thresh[cls_name]['confidence']:
+            if score < self.conf_thresh:
                 continue
-            
+                
+            cls_name = self.model.names[int(cls)]
             defect = {
                 'class': cls_name,
                 'confidence': float(score),
-                'bbox': box.tolist(),
+                'bbox': [float(x) for x in box.tolist()],
                 'measurements': self._compute_measurements(
                     box, masks[idx] if masks is not None else None
                 )
@@ -72,15 +55,15 @@ class DefectDetector:
     
     def _compute_measurements(self, box, mask=None):
         """Compute physical measurements of defects"""
-        x1, y1, x2, y2 = box
+        x1, y1, x2, y2 = map(float, box)
         
         measurements = {
-            'area_pixels': (x2 - x1) * (y2 - y1),
-            'width_mm': (x2 - x1) * self.settings.PIXEL_TO_MM_RATIO,
-            'height_mm': (y2 - y1) * self.settings.PIXEL_TO_MM_RATIO,
+            'area_pixels': float((x2 - x1) * (y2 - y1)),
+            'width_mm': float((x2 - x1) * self.settings.PIXEL_TO_MM_RATIO if self.settings else 0.1),
+            'height_mm': float((y2 - y1) * self.settings.PIXEL_TO_MM_RATIO if self.settings else 0.1)
         }
         
         if mask is not None:
-            measurements['mask_area'] = np.sum(mask)
+            measurements['mask_area'] = float(np.sum(mask))
             
         return measurements 

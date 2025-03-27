@@ -12,8 +12,11 @@ import yaml
 
 # Define defect classes based on the dataset
 DEFECT_CLASSES = {
-    'Bad_podu': 0,      # Solder paste slope defect (坡度)
-    'Bad_qiaojiao': 1   # Solder bridging defect (桥脚)
+    'SolderSlopeDefect': 0,      # Solder paste slope defect (坡度)
+    'SolderBridgingDefect': 1,   # Solder bridging defect (桥脚)
+    # Legacy mappings
+    'Bad_podu': 0,               # Maps to SolderSlopeDefect
+    'Bad_qiaojiao': 1           # Maps to SolderBridgingDefect
 }
 
 class DatasetPreparator:
@@ -169,12 +172,18 @@ class DatasetPreparator:
     
     def _create_dataset_config(self):
         """Create YAML configuration for YOLO training"""
+        # Create a mapping using only the canonical names
+        canonical_names = {
+            0: 'SolderSlopeDefect',
+            1: 'SolderBridgingDefect'
+        }
+        
         config = {
             'path': str(self.output_path),
             'train': str(self.output_path / 'train' / 'images'),
             'val': str(self.output_path / 'val' / 'images'),
             'test': str(self.output_path / 'test' / 'images'),
-            'names': {v: k for k, v in DEFECT_CLASSES.items()}
+            'names': canonical_names
         }
         
         with open(self.output_path / 'dataset.yaml', 'w') as f:

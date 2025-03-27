@@ -1,44 +1,59 @@
 # Model configuration for PCB defect detection
 
 # Model settings
-model_type: 'yolov8s.pt'  # YOLOv8 small model
-image_size: [640, 640]    # Input image size
+model:
+  name: yolov8s.pt
+  input_size: [640, 640]
+  device: cuda
+  num_workers: 4
 
-# Defect classes from the dataset
+# Defect classes
 defect_classes:
-  0: 'Bad_podu'      # Solder paste slope defect (坡度)
-  1: 'Bad_qiaojiao'  # Solder bridging defect (桥脚)
+  0: 'SolderSlopeDefect'      # Solder paste slope defect (坡度)
+  1: 'SolderBridgingDefect'   # Solder bridging defect (桥脚)
 
-# Training settings
-epochs: 100
-batch_size: 16
-num_workers: 4
-early_stopping_patience: 10
+# Training parameters
+training:
+  epochs: 100
+  batch_size: 8
+  optimizer: SGD
+  learning_rate: 0.01
+  weight_decay: 0.0005
+  dropout: 0.2
+  early_stopping_patience: 50
+  output_dir: runs/train
+  experiment_name: pcb_defect_detection
+  label_smoothing: 0.1
 
-# Optimizer settings
-optimizer: 'AdamW'
-learning_rate: 0.001
-weight_decay: 0.0005
-label_smoothing: 0.1
-dropout: 0.2
-
-# Output settings
-output_dir: 'runs/train'
-experiment_name: 'pcb_defect_detection'
-
-# Augmentation settings
+# Augmentation parameters
 augmentation:
-  # Geometric augmentations
-  rotation_range: [-30, 30]     # Less extreme rotation for PCB images
-  scale_range: [0.8, 1.2]      # Scale variation
-  translate_range: [-0.1, 0.1]  # Translation
+  # Geometric transformations
+  degrees: 0.0        # Rotation range in degrees
+  translate: 0.1      # Translation ratio
+  scale: 0.3         # Scale ratio
+  shear: 0.0         # Shear angle in degrees
+  perspective: 0.0    # Perspective distortion
+  flipud: 0.0        # Vertical flip probability
+  fliplr: 0.5        # Horizontal flip probability
   
-  # Color/intensity augmentations
-  brightness_range: [0.8, 1.2]
-  contrast_range: [0.8, 1.2]
-  saturation_range: [0.8, 1.2]
+  # Color/intensity transformations
+  hsv_h: 0.015       # Hue variation
+  hsv_s: 0.4         # Saturation variation
+  hsv_v: 0.4         # Value/brightness variation
   
-  # PCB-specific augmentations
-  noise_probability: 0.3        # Add noise to simulate image sensor noise
-  blur_probability: 0.2         # Blur to simulate focus variations
-  shadow_probability: 0.2       # Add shadows to simulate lighting variations 
+  # Mosaic and mixup
+  mosaic: 0.0        # Mosaic augmentation probability
+  mixup: 0.0         # Mixup augmentation probability
+  copy_paste: 0.0    # Copy-paste augmentation probability
+
+# Loss weights
+loss:
+  box: 7.5           # Bounding box regression weight
+  cls: 0.5           # Classification weight
+  dfl: 1.5           # Distribution focal loss weight
+
+# Detection parameters
+detection:
+  conf: 0.001        # Confidence threshold
+  iou: 0.7           # IoU threshold
+  max_det: 300       # Maximum detections per image 

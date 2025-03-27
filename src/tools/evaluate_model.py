@@ -21,7 +21,14 @@ class ModelEvaluator:
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.logger = self._setup_logger()
-        self.class_names = ['Bad_podu', 'Bad_qiaojiao']  # Solder paste slope and bridging defects
+        self.class_names = ['SolderSlopeDefect', 'SolderBridgingDefect']  # Solder paste slope and bridging defects
+        # Blue for ground truth, Red for predictions
+        self.gt_color = (255, 128, 0)  # Blue
+        self.pred_color = (0, 0, 255)  # Red
+        self.font = cv2.FONT_HERSHEY_SIMPLEX
+        self.font_scale = 0.5
+        self.thickness = 2
+        self.dataset_config = None  # Will store dataset configuration
         
     def _setup_logger(self):
         logger = logging.getLogger('Evaluation')
@@ -40,23 +47,32 @@ class ModelEvaluator:
         
         # Load dataset configuration
         with open(dataset_yaml, 'r') as f:
-            dataset_config = yaml.safe_load(f)
+            self.dataset_config = yaml.safe_load(f)
         
         # Get test image paths
-        test_path = Path(dataset_config['test'])
+        test_path = Path(self.dataset_config['path']) / self.dataset_config['test']
         image_files = sorted(test_path.glob('*.jpg'))
+        
+        if not image_files:
+            self.logger.error(f"No images found in {test_path}")
+            return None
+            
+        self.logger.info(f"Found {len(image_files)} test images")
         
         # Initialize metrics
         metrics = {
             'total_images': len(image_files),
             'total_detections': 0,
-            'class_metrics': {cls: {
-                'tp': 0, 'fp': 0, 'fn': 0,
-                'precisions': [], 'recalls': [],
-                'confidences': [],
-                'ap': 0.0
-            } for cls in self.class_names},
-            'inference_times': []
+            'inference_times': [],
+            'per_class': {
+                cls_name: {
+                    'predictions': [],
+                    'ground_truths': [],
+                    'true_positives': 0,
+                    'false_positives': 0,
+                    'false_negatives': 0
+                } for cls_name in self.class_names
+            }
         }
         
         # Process each test image
@@ -86,7 +102,7 @@ class ModelEvaluator:
             self._process_detections(predictions, ground_truths, metrics)
             
             # Save visualization
-            self._save_visualization(img, results, output_path / f"{img_file.stem}_eval.jpg")
+            self._save_visualization(img, results, output_path / f"{img_file.stem}_eval.jpg", label_file)
             
             # Store for confusion matrix
             all_predictions.extend(predictions)
@@ -104,16 +120,26 @@ class ModelEvaluator:
         return final_metrics
     
     def _get_predictions(self, results) -> List[Dict]:
-        """Convert YOLO results to prediction format"""
+        """Convert YOLO results to prediction format and normalize coordinates"""
         predictions = []
         boxes = results.boxes
+        img_width = results.orig_shape[1]
+        img_height = results.orig_shape[0]
         
         for i in range(len(boxes)):
             box = boxes[i]
+            xywh = box.xywh[0].tolist()  # x_center, y_center, width, height
+            # Normalize coordinates
+            normalized_box = [
+                xywh[0] / img_width,  # x_center
+                xywh[1] / img_height,  # y_center
+                xywh[2] / img_width,  # width
+                xywh[3] / img_height,  # height
+            ]
             pred = {
                 'class_id': int(box.cls),
                 'confidence': float(box.conf),
-                'box': box.xywh[0].tolist()  # x_center, y_center, width, height
+                'box': normalized_box
             }
             if pred['confidence'] >= self.conf_threshold:
                 predictions.append(pred)
@@ -137,11 +163,20 @@ class ModelEvaluator:
         # Track matched ground truths to avoid double-counting
         matched_gt = set()
         
+        # Debug: Print coordinates
+        self.logger.info(f"\nPredictions ({len(predictions)}):")
+        for pred in predictions:
+            self.logger.info(f"Class: {self.class_names[pred['class_id']]}, Box: {pred['box']}, Conf: {pred['confidence']:.3f}")
+        
+        self.logger.info(f"\nGround Truths ({len(ground_truths)}):")
+        for gt in ground_truths:
+            self.logger.info(f"Class: {self.class_names[gt['class_id']]}, Box: {gt['box']}")
+        
         # Process each prediction
         for pred in predictions:
             metrics['total_detections'] += 1
             cls_name = self.class_names[pred['class_id']]
-            metrics['class_metrics'][cls_name]['confidences'].append(pred['confidence'])
+            metrics['per_class'][cls_name]['predictions'].append(pred)
             
             # Find best matching ground truth
             best_iou = 0
@@ -152,23 +187,27 @@ class ModelEvaluator:
                     continue
                 
                 iou = self._calculate_iou(pred['box'], gt['box'])
+                # Debug: Print IoU values
+                self.logger.info(f"IoU between pred {pred['box']} and gt {gt['box']}: {iou:.3f}")
+                
                 if iou > best_iou and iou >= self.iou_threshold:
                     best_iou = iou
                     best_gt_idx = i
             
             if best_gt_idx >= 0:
                 # True positive
-                metrics['class_metrics'][cls_name]['tp'] += 1
+                metrics['per_class'][cls_name]['true_positives'] += 1
                 matched_gt.add(best_gt_idx)
             else:
                 # False positive
-                metrics['class_metrics'][cls_name]['fp'] += 1
+                metrics['per_class'][cls_name]['false_positives'] += 1
         
         # Count false negatives
         for i, gt in enumerate(ground_truths):
+            cls_name = self.class_names[gt['class_id']]
+            metrics['per_class'][cls_name]['ground_truths'].append(gt)
             if i not in matched_gt:
-                cls_name = self.class_names[gt['class_id']]
-                metrics['class_metrics'][cls_name]['fn'] += 1
+                metrics['per_class'][cls_name]['false_negatives'] += 1
     
     def _calculate_iou(self, box1, box2) -> float:
         """Calculate IoU between two boxes in YOLO format (x_center, y_center, width, height)"""
@@ -207,20 +246,48 @@ class ModelEvaluator:
             'classes': {}
         }
         
-        for cls_name, cls_metrics in metrics['class_metrics'].items():
-            tp = cls_metrics['tp']
-            fp = cls_metrics['fp']
-            fn = cls_metrics['fn']
+        for cls_name, cls_metrics in metrics['per_class'].items():
+            tp = cls_metrics['true_positives']
+            fp = cls_metrics['false_positives']
+            fn = cls_metrics['false_negatives']
             
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0
             f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
             
-            # Calculate AP using sklearn
-            if cls_metrics['confidences']:
-                y_true = [1] * tp + [0] * fp
-                y_scores = sorted(cls_metrics['confidences'], reverse=True)
-                ap = average_precision_score(y_true, y_scores)
+            # Calculate AP using predictions and ground truths
+            predictions = sorted(cls_metrics['predictions'], key=lambda x: x['confidence'], reverse=True)
+            total_gt = len(cls_metrics['ground_truths'])
+            
+            if predictions and total_gt > 0:
+                # Calculate cumulative TP and FP
+                cumul_tp = 0
+                cumul_fp = 0
+                precisions = []
+                recalls = []
+                
+                for pred in predictions:
+                    matched = False
+                    for gt in cls_metrics['ground_truths']:
+                        if self._calculate_iou(pred['box'], gt['box']) >= self.iou_threshold:
+                            matched = True
+                            break
+                    
+                    if matched:
+                        cumul_tp += 1
+                    else:
+                        cumul_fp += 1
+                    
+                    current_precision = cumul_tp / (cumul_tp + cumul_fp)
+                    current_recall = cumul_tp / total_gt
+                    
+                    precisions.append(current_precision)
+                    recalls.append(current_recall)
+                
+                # Calculate AP using precision-recall curve
+                ap = 0
+                for i in range(len(recalls)-1):
+                    ap += (recalls[i+1] - recalls[i]) * precisions[i]
             else:
                 ap = 0.0
             
@@ -229,9 +296,15 @@ class ModelEvaluator:
                 'recall': recall,
                 'f1_score': f1_score,
                 'ap': ap,
-                'total_predictions': tp + fp,
-                'total_ground_truths': tp + fn
+                'true_positives': tp,
+                'false_positives': fp,
+                'false_negatives': fn,
+                'total_predictions': len(predictions),
+                'total_ground_truths': total_gt
             }
+            
+            # Store AP in the original metrics for plotting
+            metrics['per_class'][cls_name]['ap'] = ap
         
         # Calculate mAP
         final_metrics['mAP'] = np.mean([
@@ -243,8 +316,22 @@ class ModelEvaluator:
     def _plot_metrics(self, metrics: Dict, predictions: List[Dict], ground_truths: List[Dict], output_path: Path):
         """Plot evaluation metrics"""
         # 1. Confusion Matrix
-        y_true = [gt['class_id'] for gt in ground_truths]
-        y_pred = [pred['class_id'] for pred in predictions]
+        y_true = []
+        y_pred = []
+        
+        # Process each class separately
+        for cls_name, cls_metrics in metrics['per_class'].items():
+            cls_id = self.class_names.index(cls_name)
+            # Add true positives
+            y_true.extend([cls_id] * cls_metrics['true_positives'])
+            y_pred.extend([cls_id] * cls_metrics['true_positives'])
+            # Add false positives
+            y_true.extend([1-cls_id] * cls_metrics['false_positives'])  # Other class
+            y_pred.extend([cls_id] * cls_metrics['false_positives'])
+            # Add false negatives
+            y_true.extend([cls_id] * cls_metrics['false_negatives'])
+            y_pred.extend([1-cls_id] * cls_metrics['false_negatives'])  # Other class
+        
         cm = confusion_matrix(y_true, y_pred, labels=range(len(self.class_names)))
         
         plt.figure(figsize=(10, 8))
@@ -257,12 +344,33 @@ class ModelEvaluator:
         
         # 2. Precision-Recall Curves
         plt.figure(figsize=(10, 8))
-        for cls_name, cls_metrics in metrics['class_metrics'].items():
-            if cls_metrics['confidences']:
-                y_true = [1] * cls_metrics['tp'] + [0] * cls_metrics['fp']
-                y_scores = sorted(cls_metrics['confidences'], reverse=True)
-                precision, recall, _ = precision_recall_curve(y_true, y_scores)
-                plt.plot(recall, precision, label=f'{cls_name} (AP={cls_metrics["ap"]:.3f})')
+        for cls_name, cls_metrics in metrics['per_class'].items():
+            if cls_metrics['predictions']:
+                # Sort predictions by confidence
+                sorted_preds = sorted(cls_metrics['predictions'], key=lambda x: x['confidence'], reverse=True)
+                confidences = [pred['confidence'] for pred in sorted_preds]
+                
+                # Calculate precision and recall points
+                tp = 0
+                fp = 0
+                total_positives = cls_metrics['true_positives'] + cls_metrics['false_negatives']
+                precisions = []
+                recalls = []
+                
+                for pred in sorted_preds:
+                    if any(self._calculate_iou(pred['box'], gt['box']) >= self.iou_threshold 
+                          for gt in cls_metrics['ground_truths']):
+                        tp += 1
+                    else:
+                        fp += 1
+                    
+                    precision = tp / (tp + fp)
+                    recall = tp / total_positives if total_positives > 0 else 0
+                    
+                    precisions.append(precision)
+                    recalls.append(recall)
+                
+                plt.plot(recalls, precisions, label=f'{cls_name} (AP={cls_metrics["ap"]:.3f})')
         
         plt.title('Precision-Recall Curves')
         plt.xlabel('Recall')
@@ -274,9 +382,10 @@ class ModelEvaluator:
         
         # 3. Confidence Distribution
         plt.figure(figsize=(10, 8))
-        for cls_name, cls_metrics in metrics['class_metrics'].items():
-            if cls_metrics['confidences']:
-                plt.hist(cls_metrics['confidences'], bins=20, alpha=0.5, label=cls_name)
+        for cls_name, cls_metrics in metrics['per_class'].items():
+            if cls_metrics['predictions']:
+                confidences = [pred['confidence'] for pred in cls_metrics['predictions']]
+                plt.hist(confidences, bins=20, alpha=0.5, label=cls_name)
         
         plt.title('Confidence Score Distribution')
         plt.xlabel('Confidence Score')
@@ -292,11 +401,61 @@ class ModelEvaluator:
         with open(metrics_file, 'w') as f:
             json.dump(metrics, f, indent=2)
     
-    def _save_visualization(self, img: np.ndarray, results, output_path: Path):
-        """Save detection visualization"""
-        # Get the plotted image from YOLO results
-        vis_img = results.plot()
-        cv2.imwrite(str(output_path), vis_img)
+    def _save_visualization(self, img: np.ndarray, results, output_path: Path, label_file: Path):
+        """Save detection visualization with both predictions and ground truth"""
+        # Create copies for visualization
+        orig_with_gt = img.copy()
+        pred_img = img.copy()
+        
+        # Get image dimensions
+        h, w = img.shape[:2]
+        
+        # Draw ground truth boxes on original image
+        if label_file.exists():
+            with open(label_file, 'r') as f:
+                for line in f:
+                    cls_id, x_center, y_center, width, height = map(float, line.strip().split())
+                    # Convert normalized coordinates to pixel coordinates
+                    x1 = int((x_center - width/2) * w)
+                    y1 = int((y_center - height/2) * h)
+                    x2 = int((x_center + width/2) * w)
+                    y2 = int((y_center + height/2) * h)
+                    
+                    # Draw ground truth box
+                    cv2.rectangle(orig_with_gt, (x1, y1), (x2, y2), self.gt_color, self.thickness)
+                    # Add class label
+                    label = self.class_names[int(cls_id)]
+                    (text_w, text_h), _ = cv2.getTextSize(label, self.font, self.font_scale, 1)
+                    cv2.rectangle(orig_with_gt, (x1, y1-text_h-5), (x1+text_w, y1), self.gt_color, -1)
+                    cv2.putText(orig_with_gt, label, (x1, y1-5), self.font, self.font_scale, (255,255,255), 1)
+        
+        # Draw predictions with custom color
+        boxes = results.boxes
+        for box in boxes:
+            if box.conf >= self.conf_threshold:
+                # Get box coordinates
+                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                
+                # Draw prediction box
+                cv2.rectangle(pred_img, (x1, y1), (x2, y2), self.pred_color, self.thickness)
+                
+                # Add class label and confidence
+                label = f"{self.class_names[int(box.cls)]} {float(box.conf):.2f}"
+                (text_w, text_h), _ = cv2.getTextSize(label, self.font, self.font_scale, 1)
+                cv2.rectangle(pred_img, (x1, y1-text_h-5), (x1+text_w, y1), self.pred_color, -1)
+                cv2.putText(pred_img, label, (x1, y1-5), self.font, self.font_scale, (255,255,255), 1)
+        
+        # Create side-by-side comparison
+        comparison = np.zeros((h, w*2, 3), dtype=np.uint8)
+        comparison[:, :w] = orig_with_gt  # Original image with ground truth
+        comparison[:, w:] = pred_img  # Predictions
+        
+        # Add text labels
+        cv2.putText(comparison, 'Ground Truth', (10, 30), self.font, 1, self.gt_color, 2)
+        cv2.putText(comparison, 'Predictions', (w+10, 30), self.font, 1, self.pred_color, 2)
+        
+        # Save the comparison
+        cv2.imwrite(str(output_path), comparison)
 
 def main():
     import argparse
@@ -316,6 +475,10 @@ def main():
     evaluator = ModelEvaluator(args.model, args.conf_thres, args.iou_thres)
     metrics = evaluator.evaluate(args.dataset, args.output)
     
+    if metrics is None:
+        print("Evaluation failed!")
+        return
+    
     # Print summary
     print("\nEvaluation Results:")
     print(f"Total Images: {metrics['total_images']}")
@@ -330,6 +493,9 @@ def main():
         print(f"  Recall: {cls_metrics['recall']:.3f}")
         print(f"  F1-Score: {cls_metrics['f1_score']:.3f}")
         print(f"  Average Precision: {cls_metrics['ap']:.3f}")
+        print(f"  True Positives: {cls_metrics['true_positives']}")
+        print(f"  False Positives: {cls_metrics['false_positives']}")
+        print(f"  False Negatives: {cls_metrics['false_negatives']}")
         print(f"  Total Predictions: {cls_metrics['total_predictions']}")
         print(f"  Total Ground Truths: {cls_metrics['total_ground_truths']}")
 
