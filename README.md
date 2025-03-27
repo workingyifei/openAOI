@@ -155,17 +155,43 @@ Measurements include:
 ```bash
 python src/tools/evaluate_model.py \
     --model path/to/model.pt \
-    --test-data path/to/test/data \
+    --dataset path/to/dataset.yaml \
     --output evaluation_results \
-    --conf-thres 0.25
+    --conf-thres 0.25 \
+    --iou-thres 0.5
 ```
 
-Generates:
-- Precision, recall, and F1-score metrics
-- Confusion matrices
+The evaluation tool provides comprehensive analysis of model performance including:
+
+#### Metrics
+- Mean Average Precision (mAP)
+- Per-class metrics:
+  - Precision, Recall, and F1-score
+  - Average Precision (AP)
+  - True Positives, False Positives, False Negatives
+  - Total predictions and ground truths
+
+#### Visualizations
+- Side-by-side comparison of ground truth and predictions
+  - Ground truth boxes in blue with class labels
+  - Prediction boxes in red with class labels and confidence scores
+  - Clear text headers for each side
+- Confusion matrix
+- Precision-Recall curves
 - Confidence score distributions
-- Inference time analysis
-- Annotated test images
+
+#### Output Files
+- `metrics.json`: Detailed evaluation metrics
+- `confusion_matrix.png`: Confusion matrix visualization
+- `precision_recall_curves.png`: PR curves for each class
+- `confidence_distribution.png`: Distribution of confidence scores
+- `*_eval.jpg`: Visualization files for each test image
+
+The evaluation process includes:
+1. Loading the model and dataset configuration
+2. Processing test images and computing IoU with ground truth
+3. Calculating comprehensive metrics
+4. Generating visualizations and saving results
 
 ## Model Configuration
 
